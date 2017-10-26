@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 
 def parse_cmdline_arguments() -> argparse.Namespace:
     """Define and parse commandline arguments."""
-    arguments = argparse.ArgumentParser(description=__doc__)
+    arguments = argparse.ArgumentParser(description=__doc__,
+            formatter_class=argparse.RawDescriptionHelpFormatter)
     arguments.add_argument('--input', default=sys.stdin,
             type=argparse.FileType('r'),
             help='File to read package names from. Default: stdin.')
