@@ -7,10 +7,12 @@ import argparse
 import csv
 import json
 import logging
+import os
 import sys
-from typing import List, Tuple
+from typing import Iterator, List, Tuple
 from typing.io import IO
 
+from util.github_repo import RepoVerifier
 from util.package import Package
 from util.parse import parse_package_details, parse_package_to_repos_file
 
@@ -64,12 +66,62 @@ def configure_logger(stream: IO[str]):
     set_logging_handler(handler)
 
 
-def match_play_and_github(package_to_repo: IO[str], details_dir: str):
+def deduplicate(repo_names: List[str], repo_verifier: RepoVerifier) -> str:
+    """Deduplicate repositories by popularity.
+
+    Fetches meta data from Github and filters out most popular repository.
+    Filters are applied in this order:
+        - Repositories that are not forks themselves
+        - Repositories with most forks
+        - Repositories with most watchers
+        - Repositories with most subscribers
+
+    :param List[str] repo_names:
+        List of repository names to filter.
+    :param RepoVerifier repo_verifier:
+        Instance to fetch meta data from Github.
+    :returns str:
+        Full name of most popular repository or None if no unique most popular
+        repo exists.
+    """
+    # Return early if possible to avoid unnecessary API calls
+    if len(repo_names) == 1:
+        return repo_names[0]['full_name']
+
+    # Download meta data from Github
+    repos = [
+            repo_verifier.get_repo_info(repo_name)
+            for repo_name in repo_names]
+    # Deduplicate by canonical repo name and filter out None
+    repos = {repo['full_name']: repo for repo in repos if repo}.values()
+
+    if len(repo_names) == 1:
+        return repo_names[0]['full_name']
+
+    repos = list(filter(lambda r: not r['fork'], repos))
+
+    for metric in ['forks_count', 'watchers_count', 'subscribers_count']:
+        if len(repos) == 1:
+            return repos[0]['full_name']
+        if not repos:
+            break
+        max_value = max(repos, key=lambda r: r[metric])
+        repos = list(filter(lambda r: r[metric] == max_value, repos))
+
+    if len(repos) == 1:
+        return repos[0]['full_name']
+    return None
+
+
+def match_play_and_github(
+        package_to_repo: IO[str], details_dir: str,
+        repo_verifier: RepoVerifier) -> Iterator[Tuple[str, str]]:
     stats = {
             'all': 0,
             'unknown': 0,
             'valid': 0,
             'no_github_link': 0,
+            'no_github_link_but_unique_popular': 0,
             'unique_repo': 0,
             'no_repo': 0,
             'too_many_repos': 0,
@@ -104,6 +156,15 @@ def match_play_and_github(package_to_repo: IO[str], details_dir: str):
                     len(package.github_info['repos']),
                     package.github_info['repos'])
             stats['no_github_link'] += 1
+            # Try deduplication by popularity
+            most_popular = deduplicate(
+                    package.github_info['repos'], repo_verifier)
+            if most_popular:
+                stats['no_github_link_but_unique_popular'] += 1
+                logger.debug(
+                        '"%s" is most popular repo for %s',
+                        most_popular, package_name)
+                yield package_name, most_popular
         elif not package.has_repo_links() and not is_unique_repo:
             logger.debug(
                     '"%s" does not link to valid repo (%s) and has these %d '
@@ -113,8 +174,6 @@ def match_play_and_github(package_to_repo: IO[str], details_dir: str):
                     package.github_info['repos'])
             stats['no_repo'] += 1
         elif package.has_too_many_repo_links() and not is_unique_repo:
-            # print(package_name)
-            # print(json.dumps(package.repos))
             logger.debug(
                     '"%s" has %d repo links', package_name,
                     len(package.repos))
@@ -147,7 +206,9 @@ if __name__ == '__main__':
     args = parse_cmdline_arguments()
     configure_logger(args.log)
     csv_writer = csv.writer(args.out)
+    repo_verifier = RepoVerifier(token=os.getenv('GITHUB_AUTH_TOKEN'))
     for row in match_play_and_github(
             args.package_list,
-            args.DETAILS_DIRECTORY):
+            args.DETAILS_DIRECTORY,
+            repo_verifier):
         csv_writer.writerow(row)
