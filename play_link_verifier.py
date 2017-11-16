@@ -11,11 +11,10 @@ import logging
 import requests
 import sys
 from typing import IO
+from util import log
 
 
-LOG_LEVEL = logging.DEBUG
-LOG_FORMAT = '%(asctime)s | [%(levelname)s] %(message)s'
-logger = logging.getLogger(__name__)
+__logger__ = logging.getLogger(__name__)
 
 
 def parse_cmdline_arguments() -> argparse.Namespace:
@@ -34,6 +33,12 @@ def parse_cmdline_arguments() -> argparse.Namespace:
     arguments.add_argument('--include-403', action='store_true',
             help='Include package names which Google Play returns '
                 'status `403 Unauthorized` for.')
+    arguments.add_argument(
+            '-v', '--verbose', default=0, action='count',
+            help='Increase log level. May be used several times.')
+    arguments.add_argument(
+            '-q', '--quiet', default=0, action='count',
+            help='Decrease log level. May be used several times.')
     return arguments.parse_args()
 
 
@@ -57,9 +62,9 @@ def is_package_in_play(package_name: str, include_403: bool) -> bool:
     log_msg = 'Status {} for {}'.format(
             response.status_code, response.url)
     if response.status_code != 200 and response.status_code != 404:
-        logger.error(log_msg)
+        __logger__.error(log_msg)
     else:
-        logger.info(log_msg)
+        __logger__.info(log_msg)
 
     return response.status_code == 200 or (include_403 and
             response.status_code == 403)
@@ -80,20 +85,7 @@ def package_filter(input_file: IO[str], output_file: IO[str],
             print(package, file=output_file)
 
 
-def set_logging_handler(handler: logging.Handler):
-    logger.setLevel(handler.level)
-    logger.addHandler(handler)
-
-
-def configure_logger(stream: IO[str]):
-    handler = logging.StreamHandler(stream)
-    handler.setFormatter(logging.Formatter(LOG_FORMAT))
-    handler.setLevel(LOG_LEVEL)
-
-    set_logging_handler(handler)
-
-
 if __name__ == '__main__':
     args = parse_cmdline_arguments()
-    configure_logger(args.log)
+    log.configure_logger(__package__, args.log, args.verbose, args.quiet)
     package_filter(args.input, args.output, args.include_unauthorized)
