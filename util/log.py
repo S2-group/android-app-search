@@ -1,6 +1,8 @@
 """Maintain a global logger instance."""
 import logging
 from typing import IO, Text
+import github3
+import urllib3
 
 
 LOG_LEVEL = logging.WARNING
@@ -29,6 +31,14 @@ def compute_level(verbose: int, quiet: int) -> int:
     return LEVELS[index]
 
 
+def lower_level_for_libraries(min_level: int):
+    """Decrease log level for libraries."""
+    min_level = min(min_level, logging.WARNING)
+    for package in [github3, urllib3]:
+        logger = logging.getLogger(package.__package__)
+        logger.setLevel(logging.WARNING)
+
+
 def configure_logger(name: Text, stream: IO[str], verbose: int, quiet: int):
     """Create handler for logging to an IO stream.
 
@@ -41,9 +51,12 @@ def configure_logger(name: Text, stream: IO[str], verbose: int, quiet: int):
     :param int quiet:
         Number of levels to decrease log level.
     """
+    log_level = compute_level(verbose, quiet)
     handler = logging.StreamHandler(stream)
     handler.setFormatter(logging.Formatter(LOG_FORMAT))
-    handler.setLevel(compute_level(verbose, quiet))
+    handler.setLevel(log_level)
+
+    lower_level_for_libraries(log_level)
 
     logger = logging.getLogger(name)
     logger.setLevel(handler.level)
