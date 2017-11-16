@@ -127,7 +127,7 @@ class RateLimitedGitHubSession(GitHubSession):
             wait_time = int(delta.total_seconds()) + 1
             if wait_time > 0:
                 __log__.info(
-                        'Rate limit reached. Wait for %d sec until %d',
+                        'Rate limit reached. Wait for %d sec until %s',
                         wait_time, reset)
                 time.sleep(wait_time)
 
