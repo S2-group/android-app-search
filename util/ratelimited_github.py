@@ -196,12 +196,6 @@ class RateLimitedGitHubSession(GitHubSession):
                     __logger__.info('Retry after: %d', retry_after)
                     self.suggested_time_between_requests *= 2
                     time.sleep(retry_after + self.DEFAULT_SLEEP_PERIOD)
-                elif not response and response.status_code == 403:
-                    print(method, url)
-                    print('Status Code:', response.status_code)
-                    print('Headers:', response.headers)
-                    print('Content:', response.text)
-                    raise TestException(response)
                 else:
                     break
             except ConnectionError as e:
