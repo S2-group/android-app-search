@@ -45,6 +45,7 @@ Example:
 
 import re
 from github3.repos.repo import Repository
+from github3.models import GitHubError
 from typing import Tuple
 from urllib.parse import urlparse, parse_qs
 from .parse import ParsedJSON
@@ -125,7 +126,13 @@ class Repo(Repository):
         """
         page_iterator = self.iter_commits(self.default_branch)
         # Perform actual HTTP request for first page
-        page_iterator.next()
+        try:
+            page_iterator.next()
+        except GitHubError as e:
+            if e.code == 409:  # 409 Conflict
+                # This is an empty repository
+                return 0
+            raise e
 
         last_link = page_iterator.last_response.links.get('last', {})
         last_rel = last_link.get('url', '')
