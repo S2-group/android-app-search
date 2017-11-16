@@ -10,12 +10,41 @@ the /rate_limit endpoint of the Github API v3. For more information see
 https://developer.github.com/v3/rate_limit/
 """
 
+import sys
+
 from datetime import datetime
 from github3 import GitHub
 from github3.models import GitHubCore
 from github3.repos.repo import Repository
 from github3.structs import GitHubIterator
 import time
+
+
+# FIXME: Use logging instead of makeshift class
+class TestLogger(object):
+    def log(self, *args, **kwargs):
+        print(*args, **kwargs, file=sys.stderr)
+
+    def debug(self, *args, **kwargs):
+        self.log('[DEBUG] ', *args, **kwargs)
+
+    def info(self, *args, **kwargs):
+        self.log('[INFO] ', *args, **kwargs)
+
+    def warn(self, *args, **kwargs):
+        self.log('[WARN] ', *args, **kwargs)
+
+    def error(self, *args, **kwargs):
+        self.log('[ERROR] ', *args, **kwargs)
+
+    def exception(self, *args, **kwargs):
+        self.log('[EXCEPTION] ', *args, **kwargs)
+
+    def critical(self, *args, **kwargs):
+        self.log('[CRITICAL] ', *args, **kwargs)
+
+
+__logger__ = TestLogger()
 
 
 class RateLimitedGitHub(GitHubCore):
