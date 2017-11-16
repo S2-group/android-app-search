@@ -79,7 +79,8 @@ def download_gradle_files(
         path = os.path.join(outdir, repo_name, gradle_file.path)
         makedirs(path)
         with open(path, 'wb') as output_file:
-            output_file.write(gradle_file.decoded)
+            # Ensure input to write() is of type bytes even if emtpy
+            output_file.write(gradle_file.decoded or b'')
 
 
 def parse_cmdline_arguments() -> argparse.Namespace:
