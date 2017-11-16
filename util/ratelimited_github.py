@@ -10,9 +10,8 @@ the /rate_limit endpoint of the Github API v3. For more information see
 https://developer.github.com/v3/rate_limit/
 """
 
-import sys
-
 from datetime import datetime
+import logging
 from github3 import GitHub
 from github3.models import GitHubCore
 from github3.session import GitHubSession
@@ -21,31 +20,7 @@ from urllib.parse import urlparse
 import time
 
 
-# FIXME: Use logging instead of makeshift class
-class TestLogger(object):
-    def log(self, *args, **kwargs):
-        print(*args, **kwargs, file=sys.stderr)
-
-    def debug(self, *args, **kwargs):
-        self.log('[DEBUG] ', *args, **kwargs)
-
-    def info(self, *args, **kwargs):
-        self.log('[INFO] ', *args, **kwargs)
-
-    def warn(self, *args, **kwargs):
-        self.log('[WARN] ', *args, **kwargs)
-
-    def error(self, *args, **kwargs):
-        self.log('[ERROR] ', *args, **kwargs)
-
-    def exception(self, *args, **kwargs):
-        self.log('[EXCEPTION] ', *args, **kwargs)
-
-    def critical(self, *args, **kwargs):
-        self.log('[CRITICAL] ', *args, **kwargs)
-
-
-__logger__ = TestLogger()
+__log__ = logging.getLogger(__name__)
 
 
 class RateLimitedGitHubSession(GitHubSession):
@@ -81,7 +56,7 @@ class RateLimitedGitHubSession(GitHubSession):
             if 'resources' in json:
                 self._ratelimit_cache = json['resources']
         else:
-            __logger__.debug('Cannot fill ratelimit cache')
+            __log__.debug('Cannot fill ratelimit cache')
 
     def _has_ratelimit_headers(self, headers: CaseInsensitiveDict) -> bool:
         """Test if rate limit headers are present.
@@ -151,7 +126,7 @@ class RateLimitedGitHubSession(GitHubSession):
             delta = reset - datetime.utcnow()
             wait_time = int(delta.total_seconds()) + 1
             if wait_time > 0:
-                __logger__.info(
+                __log__.info(
                         'Rate limit reached. Wait for %d sec until %d',
                         wait_time, reset)
                 time.sleep(wait_time)
@@ -190,17 +165,17 @@ class RateLimitedGitHubSession(GitHubSession):
                 if (response is not None and response.status_code == 403 and
                         retry_after_header in response.headers):
                     retry_after = int(response.headers[retry_after_header])
-                    __logger__.critical(
+                    __log__.critical(
                             'Status %d: %s', response.status_code,
                             response.json())
-                    __logger__.info('Retry after: %d', retry_after)
+                    __log__.info('Retry after: %d', retry_after)
                     self.suggested_time_between_requests *= 2
                     time.sleep(retry_after + self.DEFAULT_SLEEP_PERIOD)
                 else:
                     break
             except ConnectionError as e:
-                __logger__.exception(e)
-                __logger__.critical(
+                __log__.exception(e)
+                __log__.critical(
                         'Re-running request might lead to skipped '
                         'data. Do it anyway after %d seconds.',
                         self.DEFAULT_SLEEP_PERIOD)

@@ -13,13 +13,12 @@ from typing import Iterator, List, Tuple
 from typing.io import IO
 
 from util.github_repo import RepoVerifier
+from util import log
 from util.package import Package
 from util.parse import parse_package_details, parse_package_to_repos_file
 
 
-LOG_LEVEL = logging.DEBUG
-LOG_FORMAT = '%(asctime)s | [%(levelname)s] %(message)s'
-logger = logging.getLogger(__name__)
+__log__ = logging.getLogger(__name__)
 
 
 def parse_cmdline_arguments() -> argparse.Namespace:
@@ -49,21 +48,13 @@ def parse_cmdline_arguments() -> argparse.Namespace:
         '--log', default=sys.stderr,
         type=argparse.FileType('w'),
         help='Log file. Default: stderr.')
+    arguments.add_argument(
+        '-v', '--verbose', default=0, action='count',
+        help='Increase log level. May be used several times.')
+    arguments.add_argument(
+        '-q', '--quiet', default=0, action='count',
+        help='Decrease log level. May be used several times.')
     return arguments.parse_args()
-
-
-def set_logging_handler(handler: logging.Handler):
-    """Use handler for logging in this module."""
-    logger.setLevel(handler.level)
-    logger.addHandler(handler)
-
-
-def configure_logger(stream: IO[str]):
-    """Create handler for logging to stream."""
-    handler = logging.StreamHandler(stream)
-    handler.setFormatter(logging.Formatter(LOG_FORMAT))
-    handler.setLevel(LOG_LEVEL)
-    set_logging_handler(handler)
 
 
 def deduplicate(repo_names: List[str], repo_verifier: RepoVerifier) -> str:
@@ -133,7 +124,7 @@ def match_play_and_github(
         package = Package(package_name, package_details)
 
         if not package.is_known_package(packages):
-            logger.debug('"%s" is not a known package', package_name)
+            __log__.debug('"%s" is not a known package', package_name)
             stats['unknown'] += 1
             continue
 
@@ -149,7 +140,7 @@ def match_play_and_github(
         is_unique_repo = package.has_unique_github_repo()
 
         if not package.has_github_links() and not is_unique_repo:
-            logger.debug(
+            __log__.debug(
                     '"%s" does not link to Github and has these %d repos '
                     'on Github: %s',
                     package_name,
@@ -161,12 +152,12 @@ def match_play_and_github(
                     package.github_info['repos'], repo_verifier)
             if most_popular:
                 stats['no_github_link_but_unique_popular'] += 1
-                logger.debug(
+                __log__.debug(
                         '"%s" is most popular repo for %s',
                         most_popular, package_name)
                 yield package_name, most_popular
         elif not package.has_repo_links() and not is_unique_repo:
-            logger.debug(
+            __log__.debug(
                     '"%s" does not link to valid repo (%s) and has these %d '
                     'repos on Github: %s',
                     package_name, package.play_info['github_links'],
@@ -174,7 +165,7 @@ def match_play_and_github(
                     package.github_info['repos'])
             stats['no_repo'] += 1
         elif package.has_too_many_repo_links() and not is_unique_repo:
-            logger.debug(
+            __log__.debug(
                     '"%s" has %d repo links', package_name,
                     len(package.repos))
             stats['too_many_repos'] += 1
@@ -199,12 +190,12 @@ def match_play_and_github(
     #        - Canonicalize data and write it back to csv file.
     #           + links on google play need to be canonicalized (do they?)
     #        - ...
-    print(json.dumps(stats, indent=2))
+    __log__.debug(json.dumps(stats, indent=2))
 
 
 if __name__ == '__main__':
     args = parse_cmdline_arguments()
-    configure_logger(args.log)
+    log.configure_logger(__package__, args.log, args.verbose, args.quiet)
     csv_writer = csv.writer(args.out)
     repo_verifier = RepoVerifier(token=os.getenv('GITHUB_AUTH_TOKEN'))
     for row in match_play_and_github(
