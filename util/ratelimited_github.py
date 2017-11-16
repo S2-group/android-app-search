@@ -15,8 +15,9 @@ import sys
 from datetime import datetime
 from github3 import GitHub
 from github3.models import GitHubCore
-from github3.repos.repo import Repository
-from github3.structs import GitHubIterator
+from github3.session import GitHubSession
+from requests.structures import CaseInsensitiveDict
+from urllib.parse import urlparse
 import time
 
 
@@ -47,18 +48,80 @@ class TestLogger(object):
 __logger__ = TestLogger()
 
 
-class RateLimitedGitHub(GitHubCore):
-    """Provides functionality to wait avoid rate limit."""
+class RateLimitedGitHubSession(GitHubSession):
+    """Provices functionality to avoid rate limit of Github API.
+
+    Use this class instead of GitHubSession to avoid rate limits and abuse
+    detection.
+
+    Also provides self.suggested_time_between_requests in order to
+    proactively avoid abuse detection: Consider sleeping for suggested
+    time between requests.
+    """
     RATELIMIT_LIMIT_HEADER = 'X-RateLimit-Limit'
     RATELIMIT_REMAINING_HEADER = 'X-RateLimit-Remaining'
     RATELIMIT_RESET_HEADER = 'X-RateLimit-Reset'
 
     CORE_RESOURCE = 'core'
     SEARCH_RESOURCE = 'search'
-    GRAPHQL_RESOURCE = 'graphql'
+    GRAPHQL_RESOURCE = 'graphql'  # Unused by github3.py
 
-    def _get_ratelimit(self, resource: str=CORE_RESOURCE) -> dict:
-        """Fetch rate limit information from API.
+    DEFAULT_SLEEP_PERIOD = 1
+
+    def __init__(self):
+        super(RateLimitedGitHubSession, self).__init__()
+        self._ratelimit_cache = {}
+        self.suggested_time_between_requests = self.DEFAULT_SLEEP_PERIOD
+
+    def _fill_ratelimit_cache(self) -> dict:
+        """Fills rate limit cache with data from server."""
+        response = self.get(self.build_url('rate_limit'))
+        if response.status_code == 200 and response.content:
+            json = response.json()
+            if 'resources' in json:
+                self._ratelimit_cache = json['resources']
+        else:
+            __logger__.debug('Cannot fill ratelimit cache')
+
+    def _has_ratelimit_headers(self, headers: CaseInsensitiveDict) -> bool:
+        """Test if rate limit headers are present.
+
+        :param requests.structures.CaseInsensitiveDict headers:
+            Headers from response.
+        :returns bool:
+            True if all necessary headers are present, otherwise False.
+        """
+        return (
+                self.RATELIMIT_LIMIT_HEADER in headers and
+                self.RATELIMIT_REMAINING_HEADER in headers and
+                self.RATELIMIT_RESET_HEADER in headers)
+
+    def _cache_ratelimit_headers(
+            self, headers: CaseInsensitiveDict,
+            resource: str=CORE_RESOURCE) -> dict:
+        """Cache rate limit information from response headers.
+
+        :param requests.structures.CaseInsensitiveDict headers:
+            Headers from response.
+        :param str resource:
+            Name of resource to get rate limit for. Either CORE_RESOURCE,
+            SEARCH_RESOURCE, or GRAPHQL_RESOURCE.
+        :returns dict:
+            Dictionary containing remaining rate limit, full rate limit, and
+            reset time as POSIX timestamp.  For more information see
+            https://developer.github.com/v3/rate_limit/
+        """
+        if not self._ratelimit_cache:
+            self._ratelimit_cache = {}
+        if self._has_ratelimit_headers(headers):
+            self._ratelimit_cache[resource] = {
+                    'limit': headers.get(self.RATELIMIT_LIMIT_HEADER),
+                    'remaining': headers.get(self.RATELIMIT_REMAINING_HEADER),
+                    'reset': headers.get(self.RATELIMIT_RESET_HEADER)
+                    }
+
+    def _get_ratelimit(self, resource: str=CORE_RESOURCE):
+        """Get ratelimit information from cache or server.
 
         :param str resource:
             Name of resource to get rate limit for. Either CORE_RESOURCE,
@@ -68,41 +131,9 @@ class RateLimitedGitHub(GitHubCore):
             reset time as POSIX timestamp.  For more information see
             https://developer.github.com/v3/rate_limit/
         """
-        uri = self._github_url + '/rate_limit'
-        json = self._json(self._session.get(uri), 200)
-        return json.get('resources', {}).get(resource, {})
-
-    def _response_has_ratelimit_headers(self) -> bool:
-        """Tests if rate limit headers are present in response.
-
-        :returns bool:
-            True if all necessary headers are present, False otherwise.
-        """
-        response = self.last_response
-        return (response and response.headers and
-                self.RATELIMIT_RESET_HEADER in response.headers and
-                self.RATELIMIT_LIMIT_HEADER in response.headers and
-                self.RATELIMIT_REMAINING_HEADER in response.headers)
-
-    def _get_ratelimit_from_headers(self) -> dict:
-        """Read rate limit information from response headers.
-
-        :returns dict:
-            Dictionary containing remaining rate limit, full rate limit, and
-            reset time as POSIX timestamp.  For more information see
-            https://developer.github.com/v3/rate_limit/
-        """
-        headers = self.last_response.headers
-        return {
-                'limit': headers.get(self.RATELIMIT_LIMIT_HEADER),
-                'remaining': headers.get(self.RATELIMIT_REMAINING_HEADER),
-                'reset': headers.get(self.RATELIMIT_RESET_HEADER)
-                }
-
-    def _has_response(self) -> bool:
-        """Test if this class has a last_response member."""
-        return hasattr(self, 'last_response') and getattr(
-                self, 'last_response')
+        if not (self._ratelimit_cache and resource in self._ratelimit_cache):
+            self._fill_ratelimit_cache()
+        return self._ratelimit_cache[resource]
 
     def _wait_for_ratelimit(self, resource: str=CORE_RESOURCE):
         """Waits until ratelimit refresh if necessary.
@@ -114,60 +145,85 @@ class RateLimitedGitHub(GitHubCore):
             Name of resource to get rate limit for. Either CORE_RESOURCE,
             SEARCH_RESOURCE, or GRAPHQL_RESOURCE.
         """
-        if self._has_response() and self._response_has_ratelimit_headers():
-            ratelimit = self._get_ratelimit_from_headers()
-        else:
-            ratelimit = self._get_ratelimit()
+        ratelimit = self._get_ratelimit(resource)
         if int(ratelimit.get('remaining', '0')) < 1:
-            reset = int(ratelimit.get('reset', '0'))
-            now = int(datetime.utcnow().timestamp())
-            wait_time = reset - now + 1
+            reset = datetime.utcfromtimestamp(int(ratelimit.get('reset', '0')))
+            delta = reset - datetime.utcnow()
+            wait_time = int(delta.total_seconds()) + 1
             if wait_time > 0:
+                __logger__.info(
+                        'Rate limit reached. Wait for {} sec until {}',
+                        wait_time, reset)
                 time.sleep(wait_time)
 
-    def _get(self, url, **kwargs):
-        """Rate limited version of _get."""
-        self._wait_for_ratelimit()
-        return self._session.get(url, **kwargs)
+    def _resource_from_url(self, url: str) -> str:
+        """Extract rate limited resource from url.
 
-    def _iter(self, count, url, cls, params=None, etag=None):
-        """Rate limited iterator for this project.
-
-        :param int count: How many items to return.
-        :param int url: First URL to start with
-        :param class cls: cls to return an object of
-        :param params dict: (optional) Parameters for the request
-        :param str etag: (optional), ETag from the last call
+        :param str url:
+            URL to check.
+        :returns str:
+            SEARCH_RESOURCE if first part of path is 'search',
+            otherwise CORE_RESOURCE.
         """
-        return RateLimitedIterator(count, url, cls, self, params, etag)
+        # This should check 'Accept' header in case github3.py gains
+        # functionality to query graphql.
+        path_frags = urlparse(url).path.split('/')
+        if len(path_frags) > 1 and path_frags[1] == self.SEARCH_RESOURCE:
+            return self.SEARCH_RESOURCE
+        else:
+            return self.CORE_RESOURCE
 
+    def request(self, method, url, *args, **kwargs):
+        """Wrapper for GitHubSession.request() to avoid rate limits.
 
-class RateLimitedIterator(RateLimitedGitHub, GitHubIterator):
-    """Rate limited version of GitHubIterator."""
-    pass
-
-
-class RateLimitedRepository(RateLimitedGitHub, Repository):
-    """Rate limited version of Repository."""
-    pass
-
-
-class RateLimitedGitHub(RateLimitedGitHub, GitHub):
-    """Rate limited version of GitHub."""
-
-    def repository(self, owner, repository):
-        """Returns a Repository object for the specified combination of
-        owner and repository
-
-        :param str owner: (required)
-        :param str repository: (required)
-        :returns: :class:`Repository <github3.repos.Repository>`
+        Also catches abuse errors (status 403) and retries in case of
+        connection errors.
         """
-        repo = super(RateLimitedGitHub, self).repository(owner, repository)
-        return RateLimitedRepository(repo.to_json(), self) if repo else None
+        retry_after_header = 'Retry-After'
+        resource = self._resource_from_url(url)
+        if url is not self.build_url('rate_limit'):
+            self._wait_for_ratelimit(resource=resource)
+        while True:
+            try:
+                response = super(RateLimitedGitHubSession, self).request(
+                        method, url, *args, **kwargs)
+                if (response is not None and response.status_code == 403 and
+                        retry_after_header in response.headers):
+                    retry_after = int(response.headers[retry_after_header])
+                    __logger__.critical(
+                            'Status %d: %s', response.status_code,
+                            response.json())
+                    __logger__.info('Retry after: %d', retry_after)
+                    self.suggested_time_between_requests *= 2
+                    time.sleep(retry_after + self.DEFAULT_SLEEP_PERIOD)
+                elif not response and response.status_code == 403:
+                    print(method, url)
+                    print('Status Code:', response.status_code)
+                    print('Headers:', response.headers)
+                    print('Content:', response.text)
+                    raise TestException(response)
+                else:
+                    break
+            except ConnectionError as e:
+                __logger__.exception(e)
+                __logger__.critical(
+                        'Re-running request might lead to skipped '
+                        'data. Do it anyway after %d seconds.',
+                        self.DEFAULT_SLEEP_PERIOD)
+                time.sleep(self.DEFAULT_SLEEP_PERIOD)
+        self._cache_ratelimit_headers(response.headers, resource)
+        return response
 
 
-# TODO: Rate limited versions of
-#        - methods: create_gist, create_issue, create_repo, gist, issue,...
-#        - classes: Gist, Issue, Search, Organization, ...
-#        - ...
+class RateLimitedGitHub(GitHub):
+    """Rate limited version of GitHub.
+
+    Wrapper for github3.GitHub to actively avoid running into rate limits
+    and waiting for suggested time if abuse detection is triggered.
+    """
+    def __init__(self, login='', password='', token=''):
+        GitHubCore.__init__(self, {}, RateLimitedGitHubSession())
+        if token:
+            self.login(login, token=token)
+        elif login and password:
+            self.login(login, password)

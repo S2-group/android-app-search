@@ -44,13 +44,14 @@ Example:
 """
 
 import re
+from github3.repos.repo import Repository
 from typing import Tuple
 from urllib.parse import urlparse, parse_qs
 from .parse import ParsedJSON
-from .ratelimited_github import RateLimitedGitHub, RateLimitedRepository
+from .ratelimited_github import RateLimitedGitHub
 
 
-class Repo(RateLimitedRepository):
+class Repo(Repository):
     """Selection of information about repository.
 
     Relevant pieces of information are gathered in property `meta_data`.
@@ -168,7 +169,7 @@ class RepoVerifier(RateLimitedGitHub):
         """
         owner, name = self._full_name_to_parts(full_name)
         repo = self.repository(owner, name)
-        return Repo(repo.to_json()) if repo else None
+        return Repo(repo.to_json(), repo._session) if repo else None
 
     def get_repo_info(self, full_name: str) -> ParsedJSON:
         """Retrieve information on repository from Github.
