@@ -1,6 +1,6 @@
 """Match package names to Github repositories.
 
-TODO
+See documentation of match_play_and_github() for details.
 """
 
 import argparse
@@ -107,6 +107,23 @@ def deduplicate(repo_names: List[str], repo_verifier: RepoVerifier) -> str:
 def match_play_and_github(
         package_to_repo: IO[str], details_dir: str,
         repo_verifier: RepoVerifier) -> Iterator[Tuple[str, str]]:
+    """Match Android apps on Google Play with their repositories on Github.
+
+    :param IO[str] input_file:
+        CSV file to parse.
+        The file needs to contain a column `package` and a column
+        `all_repos`. `all_repos` contains a comma separated string of
+        Github repositories that include an AndroidManifest.xml file for
+        package name in column `package`.
+    :param str details_dir:
+        Name of directory to include JSON files from. Filenames in this
+        directory need to have .json extension. Filename without extension is
+        assumed to be package name for details contained in file.
+    :param util.repo_verifier.RepoVerifier:
+        Instance of RepoVerifier to use for Github API v3 access.
+    :returns Iterator[Tuple[str, str]]:
+        An iterator over package name and repository name that match.
+    """
     stats = {
             'all': 0,
             'unknown': 0,
