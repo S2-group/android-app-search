@@ -121,13 +121,13 @@ def main(args: argparse.Namespace, token: str):
     github = GradleFileSearcher(token=token)
     csv_reader = csv.DictReader(args.repo_list)
     for row in csv_reader:
-        if len(row) > 1:
-            repo_name = row['full_name']
+        repo_name = row['full_name']
+        if repo_name:
             __log__.info('Get gradle files in %s', repo_name)
             download_gradle_files(repo_name, github, args.outdir)
         else:
             __log__.warning(
-                'Package %s does not contain a repo name.', row[0])
+                'Package %s does not contain a repo name.', row['full_name'])
 
 
 if __name__ == '__main__':
