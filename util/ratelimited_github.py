@@ -56,7 +56,7 @@ class RateLimitedGitHubSession(GitHubSession):
             if 'resources' in json:
                 self._ratelimit_cache = json['resources']
         else:
-            __log__.debug('Cannot fill ratelimit cache')
+            __log__.critical('Cannot fill ratelimit cache')
 
     def _has_ratelimit_headers(self, headers: CaseInsensitiveDict) -> bool:
         """Test if rate limit headers are present.
@@ -124,7 +124,7 @@ class RateLimitedGitHubSession(GitHubSession):
         if int(ratelimit.get('remaining', '0')) < 1:
             reset = datetime.utcfromtimestamp(int(ratelimit.get('reset', '0')))
             delta = reset - datetime.utcnow()
-            wait_time = int(delta.total_seconds()) + 1
+            wait_time = int(delta.total_seconds()) + 2
             if wait_time > 0:
                 __log__.info(
                         'Rate limit reached. Wait for %d sec until %s',
@@ -165,12 +165,18 @@ class RateLimitedGitHubSession(GitHubSession):
                 if (response is not None and response.status_code == 403 and
                         retry_after_header in response.headers):
                     retry_after = int(response.headers[retry_after_header])
-                    __log__.critical(
+                    __log__.warn(
                             'Status %d: %s', response.status_code,
                             response.json())
                     __log__.info('Retry after: %d', retry_after)
                     self.suggested_time_between_requests *= 2
                     time.sleep(retry_after + self.DEFAULT_SLEEP_PERIOD)
+                elif response is not None and response.status_code == 403:
+                    __log__.error(
+                            'Status %d: %s', response.status_code,
+                            response.json())
+                    self._fill_ratelimit_cache()
+                    self._wait_for_ratelimit(resource=resource)
                 else:
                     break
             except ConnectionError as e:
