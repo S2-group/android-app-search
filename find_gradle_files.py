@@ -8,9 +8,11 @@ import logging
 import os
 import sys
 from typing import Iterator
+from github3.models import GitHubError
 from github3.repos.contents import Contents
 from github3.search import CodeSearchResult
 from util import log
+from util.github_repo import RepoVerifier
 from util.ratelimited_github import RateLimitedGitHub
 
 
@@ -83,6 +85,31 @@ def download_gradle_files(
             output_file.write(gradle_file.decoded or b'')
 
 
+def symlink_repo(outdir: str, old_name: str, new_name: str):
+    """Create a symlink from outdir/old_name to outdir/new_name.
+
+    May create dead links if outdir/new_name does not exist.
+
+    :param str outdir:
+        Prefix for both link and target.
+    :param str old_name:
+        Name of symlink to create.
+    :param str new_name:
+        Name of target to symlink to.
+    """
+    old_path = os.path.join(outdir, old_name)
+    dirname, basename = os.path.split(old_path)
+    if not basename:
+        old_path = dirname
+        dirname, basename = os.path.split(old_path)
+    print(dirname, basename)
+    makedirs(os.path.join(dirname, ''))  # End in / to make full path
+
+    new_path = os.path.join(outdir, new_name, '')
+    rel_path = os.path.relpath(new_path, dirname)
+    os.symlink(rel_path, old_path)
+
+
 def parse_cmdline_arguments() -> argparse.Namespace:
     """Define and parse commandline arguments."""
     arguments = argparse.ArgumentParser(
@@ -122,12 +149,28 @@ def main(args: argparse.Namespace, token: str):
     csv_reader = csv.DictReader(args.repo_list)
     for row in csv_reader:
         repo_name = row['full_name']
-        if repo_name:
-            __log__.info('Get gradle files in %s', repo_name)
-            download_gradle_files(repo_name, github, args.outdir)
-        else:
-            __log__.warning(
-                'Package %s does not contain a repo name.', row['full_name'])
+        while repo_name:
+            try:
+                __log__.info('Get gradle files in %s', repo_name)
+                download_gradle_files(repo_name, github, args.outdir)
+                break
+            except GitHubError as error:
+                if error.code == 422:  # Validation Failed
+                    # Likely a repo name that does not exist anymore
+                    parts = RepoVerifier._full_name_to_parts(repo_name)
+                    repo = github.repository(*parts)
+                    if not repo:
+                        __log__.info('Repo does not exist: %s', repo_name)
+                        break
+                    elif repo.full_name is not repo_name:
+                        __log__.info(
+                            'Repo was moved: %s -> %s', repo_name,
+                            repo.full_name)
+                        symlink_repo(args.outdir, repo_name, repo.full_name)
+                        repo_name = repo.full_name  # Try with new name
+                    else:
+                        __log__.exception(error)
+                        raise error
 
 
 if __name__ == '__main__':
