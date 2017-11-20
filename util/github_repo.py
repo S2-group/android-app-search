@@ -174,7 +174,7 @@ class RepoVerifier(RateLimitedGitHub):
         :returns Repo:
             Repository identified by full_name.
         """
-        owner, name = self._full_name_to_parts(full_name)
+        owner, name = self.full_name_to_parts(full_name)
         repo = self.repository(owner, name)
         return Repo(repo.to_json(), repo._session) if repo else None
 
@@ -192,7 +192,7 @@ class RepoVerifier(RateLimitedGitHub):
         return repo.meta_data if repo else None
 
     @staticmethod
-    def _full_name_to_parts(full_name: str) -> Tuple[str, str]:
+    def full_name_to_parts(full_name: str) -> Tuple[str, str]:
         """Extract owner and repository name from full name.
 
         :param str full_name:

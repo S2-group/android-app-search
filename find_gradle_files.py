@@ -157,7 +157,7 @@ def main(args: argparse.Namespace, token: str):
             except GitHubError as error:
                 if error.code == 422:  # Validation Failed
                     # Likely a repo name that does not exist anymore
-                    parts = RepoVerifier._full_name_to_parts(repo_name)
+                    parts = RepoVerifier.full_name_to_parts(repo_name)
                     repo = github.repository(*parts)
                     if not repo:
                         __log__.info('Repo does not exist: %s', repo_name)
