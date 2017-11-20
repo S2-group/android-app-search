@@ -64,7 +64,7 @@ def makedirs(path: str):
 
 
 def download_gradle_files(
-        repo_name: str, github: GradleFileSearcher, outdir: str):
+        repo_name: str, github: GradleFileSearcher, outdir: str) -> bool:
     """Download gradle files from repository.
 
     All files will end up in subdirectories of the following template:
@@ -76,13 +76,18 @@ def download_gradle_files(
         Github API wrapper to download gradle files.
     :param str outdir:
         Name of directory to download files to.
+    :returns bool:
+        True if repository contains at least one gradle file, otherwise False.
     """
+    has_gradle_files = False
     for gradle_file in github.iter_gradle_files(repo_name):
+        has_gradle_files = True
         path = os.path.join(outdir, repo_name, gradle_file.path)
         makedirs(path)
         with open(path, 'wb') as output_file:
             # Ensure input to write() is of type bytes even if emtpy
             output_file.write(gradle_file.decoded or b'')
+    return has_gradle_files
 
 
 def symlink_repo(outdir: str, old_name: str, new_name: str):
@@ -116,7 +121,7 @@ def parse_cmdline_arguments() -> argparse.Namespace:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     arguments.add_argument(
-        '-o', '--outdir', default='out/gradle_files', type=str,
+        '--outdir', default='out/gradle_files', type=str,
         help='Directory to safe gradle files to. Default: out/gradle_files.')
     arguments.add_argument(
         '-r', '--repo_list',
@@ -124,6 +129,15 @@ def parse_cmdline_arguments() -> argparse.Namespace:
         type=argparse.FileType('r'),
         help='''CSV file that contains repository names. The file needs
             to contain a column 'full_name'. Default: stdin.''')
+    arguments.add_argument(
+        '--output_list', default=sys.stdout,
+        type=argparse.FileType('w'),
+        help='''CSV file to write updated repository information to. This file
+            will contain the same information as REPO_LIST extended with three
+            columns: has_gradle_files, renamed_to, and not_found. These columns
+            indicate if the repository contains at least one gradle
+            configuration file, the name the repository has been renamed to,
+            and if the repository has not been found anymore, respectively.''')
     arguments.add_argument(
         '--log', default=sys.stderr,
         type=argparse.FileType('w'),
@@ -147,12 +161,22 @@ def main(args: argparse.Namespace, token: str):
     """
     github = GradleFileSearcher(token=token)
     csv_reader = csv.DictReader(args.repo_list)
+    fieldnames = csv_reader.fieldnames + [
+        'has_gradle_files', 'renamed_to', 'not_found']
+    csv_writer = csv.DictWriter(args.output_list, fieldnames)
+    csv_writer.writeheader()
     for row in csv_reader:
         repo_name = row['full_name']
+        row.update({
+            'has_gradle_files': False,
+            'renamed_to': '',
+            'not_found': False,
+            })
         while repo_name:
             try:
                 __log__.info('Get gradle files in %s', repo_name)
-                download_gradle_files(repo_name, github, args.outdir)
+                row['has_gradle_files'] = download_gradle_files(
+                    repo_name, github, args.outdir)
                 break
             except GitHubError as error:
                 if error.code == 422:  # Validation Failed
@@ -161,6 +185,7 @@ def main(args: argparse.Namespace, token: str):
                     repo = github.repository(*parts)
                     if not repo:
                         __log__.info('Repo does not exist: %s', repo_name)
+                        row['not_found'] = True
                         break
                     elif repo.full_name is not repo_name:
                         __log__.info(
@@ -168,9 +193,11 @@ def main(args: argparse.Namespace, token: str):
                             repo.full_name)
                         symlink_repo(args.outdir, repo_name, repo.full_name)
                         repo_name = repo.full_name  # Try with new name
+                        row['renamed_to'] = repo_name
                     else:
                         __log__.exception(error)
                         raise error
+        csv_writer.writerow(row)
 
 
 if __name__ == '__main__':
