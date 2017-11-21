@@ -4,42 +4,39 @@ For each package name in input, check if package name is available in
 Google Play. If so, print package name to output.
 
 Input and output have each package name on a separate lines.
+
+Use -h or --help for more information.
 """
 
 import argparse
 import logging
-import requests
 import sys
 from typing import IO
-from util import log
+import requests
 
 
 __logger__ = logging.getLogger(__name__)
 
 
-def parse_cmdline_arguments() -> argparse.Namespace:
-    """Define and parse commandline arguments."""
-    arguments = argparse.ArgumentParser(description=__doc__,
-            formatter_class=argparse.RawDescriptionHelpFormatter)
-    arguments.add_argument('--input', default=sys.stdin,
-            type=argparse.FileType('r'),
-            help='File to read package names from. Default: stdin.')
-    arguments.add_argument('--output', default=sys.stdout,
-            type=argparse.FileType('w'),
-            help='Output file. Default: stdout.')
-    arguments.add_argument('--log', default=sys.stderr,
-            type=argparse.FileType('w'),
-            help='Log file. Default: stderr.')
-    arguments.add_argument('--include-403', action='store_true',
-            help='Include package names which Google Play returns '
-                'status `403 Unauthorized` for.')
-    arguments.add_argument(
-            '-v', '--verbose', default=0, action='count',
-            help='Increase log level. May be used several times.')
-    arguments.add_argument(
-            '-q', '--quiet', default=0, action='count',
-            help='Decrease log level. May be used several times.')
-    return arguments.parse_args()
+def define_cmdline_arguments(parser: argparse.ArgumentParser):
+    """Define commandline arguments."""
+    parser.add_argument(
+        '--input', default=sys.stdin,
+        type=argparse.FileType('r'),
+        help='File to read package names from. Default: stdin.')
+    parser.add_argument(
+        '--output', default=sys.stdout,
+        type=argparse.FileType('w'),
+        help='Output file. Default: stdout.')
+    parser.add_argument(
+        '--log', default=sys.stderr,
+        type=argparse.FileType('w'),
+        help='Log file. Default: stderr.')
+    parser.add_argument(
+        '--include-403', action='store_true',
+        help='''Include package names which Google Play returns
+            status `403 Unauthorized` for.''')
+    parser.set_defaults(func=_main)
 
 
 def is_package_in_play(package_name: str, include_403: bool) -> bool:
@@ -85,7 +82,7 @@ def package_filter(input_file: IO[str], output_file: IO[str],
             print(package, file=output_file)
 
 
-if __name__ == '__main__':
-    args = parse_cmdline_arguments()
-    log.configure_logger(__package__, args.log, args.verbose, args.quiet)
+def _main(args: argparse.Namespace):
+    """Pass arguments to respective function."""
+    __logger__.debug('Reading from %s', args.input.name)
     package_filter(args.input, args.output, args.include_unauthorized)
