@@ -1,6 +1,6 @@
 """Match package names to Github repositories.
 
-See documentation of match_play_and_github() for details.
+Use -h or --help for more information.
 """
 
 import argparse
@@ -9,11 +9,9 @@ import json
 import logging
 import os
 import sys
-from typing import Iterator, List, Tuple
-from typing.io import IO
+from typing import IO, Iterator, List, Tuple
 
 from util.github_repo import RepoVerifier
-from util import log
 from util.package import Package
 from util.parse import parse_package_details, parse_package_to_repos_file
 
@@ -21,16 +19,13 @@ from util.parse import parse_package_details, parse_package_to_repos_file
 __log__ = logging.getLogger(__name__)
 
 
-def parse_cmdline_arguments() -> argparse.Namespace:
-    """Define and parse commandline arguments."""
-    arguments = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    arguments.add_argument(
+def define_cmdline_arguments(parser: argparse.ArgumentParser):
+    """Define commandline arguments."""
+    parser.add_argument(
         'DETAILS_DIRECTORY',
         type=str,
         help='Directory containing JSON files with details from Google Play.')
-    arguments.add_argument(
+    parser.add_argument(
         '-p', '--package_list',
         default=sys.stdin,
         type=argparse.FileType('r'),
@@ -41,20 +36,10 @@ def parse_cmdline_arguments() -> argparse.Namespace:
             AndroidManifest.xml file for package name in column
             `package`. Default: stdin.
             ''')
-    arguments.add_argument(
+    parser.add_argument(
         '-o', '--out', default=sys.stdout, type=argparse.FileType('w'),
         help='File to write CSV output to. Default: stdout')
-    arguments.add_argument(
-        '--log', default=sys.stderr,
-        type=argparse.FileType('w'),
-        help='Log file. Default: stderr.')
-    arguments.add_argument(
-        '-v', '--verbose', default=0, action='count',
-        help='Increase log level. May be used several times.')
-    arguments.add_argument(
-        '-q', '--quiet', default=0, action='count',
-        help='Decrease log level. May be used several times.')
-    return arguments.parse_args()
+    parser.set_defaults(func=_main)
 
 
 def deduplicate(repo_names: List[str], repo_verifier: RepoVerifier) -> str:
@@ -146,11 +131,8 @@ def match_play_and_github(
             continue
 
         package.search_github_links()
-        # FIXME: package.get_repo_info_from_github()
-        # TODO: Search repository for gradle files
         # TODO: Parse gradle files for Android ID
         package.set_github_repos(packages)
-        # TODO: Canonicalize owner and repo name
         package.match_repos_to_links()
         # TODO: Parse gradle files for android application
 
@@ -210,9 +192,9 @@ def match_play_and_github(
     __log__.debug(json.dumps(stats, indent=2))
 
 
-if __name__ == '__main__':
-    args = parse_cmdline_arguments()
-    log.configure_logger(__package__, args.log, args.verbose, args.quiet)
+def _main(args: argparse.Namespace):
+    """Pass arguments to respective function."""
+    __log__.debug('Reading from %s', args.package_list.name)
     csv_writer = csv.writer(args.out)
     repo_verifier = RepoVerifier(token=os.getenv('GITHUB_AUTH_TOKEN'))
     for row in match_play_and_github(

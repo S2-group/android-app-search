@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Collect data on Android apps on Github.
 
 Combine information from Github and Google Play to find open source Android
@@ -16,6 +17,7 @@ from util import log
 
 
 SUB_COMMANDS = [
+    'match_packages',
     'get_repo_data',
     'get_gradle_files',
     'add_gradle_info',
