@@ -12,26 +12,27 @@ Use -h or --help for more information.
 import argparse
 import csv
 import glob
+import logging
 import os
 import sys
 from typing import IO
 
 
-def parse_cmdline_arguments() -> argparse.Namespace:
-    """Define and parse commandline arguments."""
-    arguments = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    arguments.add_argument(
+__log__ = logging.getLogger(__name__)
+
+
+def define_cmdline_arguments(parser: argparse.ArgumentParser):
+    """Define commandline arguments."""
+    parser.add_argument(
         '--outdir', default='out/gradle_files', type=str,
         help='Directory to read gradle files from. Default: out/gradle_files.')
-    arguments.add_argument(
+    parser.add_argument(
         '-r', '--repo_list',
         default=sys.stdin,
         type=argparse.FileType('r'),
         help='''CSV file that contains repository names. The file needs
             to contain a column 'full_name'. Default: stdin.''')
-    arguments.add_argument(
+    parser.add_argument(
         '--output_list', default=sys.stdout,
         type=argparse.FileType('w'),
         help='''CSV file to write updated repository information to. This file
@@ -40,7 +41,7 @@ def parse_cmdline_arguments() -> argparse.Namespace:
             indicate if the repository contains at least one gradle
             configuration file, the name the repository has been renamed to,
             and if the repository has not been found anymore, respectively.''')
-    return arguments.parse_args()
+    parser.set_defaults(func=_main)
 
 
 def has_gradle_files(repo_name: str, outdir: str) -> bool:
@@ -116,6 +117,7 @@ def update_csv_table(repo_list: IO[str], outdir: str, output_list: IO[str]):
         csv_writer.writerow(row)
 
 
-if __name__ == '__main__':
-    ARGS = parse_cmdline_arguments()
-    update_csv_table(ARGS.repo_list, ARGS.outdir, ARGS.output_list)
+def _main(args: argparse.Namespace):
+    """Pass arguments to respective function."""
+    __log__.debug('Reading from %s', args.repo_list.name)
+    update_csv_table(args.repo_list, args.outdir, args.output_list)
