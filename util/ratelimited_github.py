@@ -1,8 +1,8 @@
 """GitHub API wrapper that adheres to rate limit.
 
-Access to Github API v3 is rate limited. Many of the API GET requests from
+Access to Github API v3 is rate limited. All API requests from
 this wrapper automatically wait for reset if rate limit is reached. This
-is achieved by overriding _get and _iter methods.
+is achieved by overriding the get method in GitHubSession.
 
 Rate limit data is read from headers of last response if available. If
 there is not response available, rate limit information is requested from
