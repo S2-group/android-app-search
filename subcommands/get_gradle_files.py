@@ -1,6 +1,9 @@
 """Download gradle files from repositories on Github.
+Read CSV file as input and write all files to outdir. Additional output is a
+CSV file with columns has_gradle_files, renamed_to, and not_found added to
+content of input file.
 
-Read CSV file as input and write all files to outdir.
+Use -h or --help for more information.
 """
 import argparse
 import csv
@@ -11,7 +14,6 @@ from typing import Iterator
 from github3.models import GitHubError
 from github3.repos.contents import Contents
 from github3.search import CodeSearchResult
-from util import log
 from util.github_repo import RepoVerifier
 from util.ratelimited_github import RateLimitedGitHub
 
@@ -115,21 +117,18 @@ def symlink_repo(outdir: str, old_name: str, new_name: str):
     os.symlink(rel_path, old_path)
 
 
-def parse_cmdline_arguments() -> argparse.Namespace:
-    """Define and parse commandline arguments."""
-    arguments = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    arguments.add_argument(
+def define_cmdline_arguments(parser: argparse.ArgumentParser):
+    """Define commandline arguments."""
+    parser.add_argument(
         '--outdir', default='out/gradle_files', type=str,
         help='Directory to safe gradle files to. Default: out/gradle_files.')
-    arguments.add_argument(
+    parser.add_argument(
         '-r', '--repo_list',
         default=sys.stdin,
         type=argparse.FileType('r'),
         help='''CSV file that contains repository names. The file needs
             to contain a column 'full_name'. Default: stdin.''')
-    arguments.add_argument(
+    parser.add_argument(
         '--output_list', default=sys.stdout,
         type=argparse.FileType('w'),
         help='''CSV file to write updated repository information to. This file
@@ -138,28 +137,17 @@ def parse_cmdline_arguments() -> argparse.Namespace:
             indicate if the repository contains at least one gradle
             configuration file, the name the repository has been renamed to,
             and if the repository has not been found anymore, respectively.''')
-    arguments.add_argument(
-        '--log', default=sys.stderr,
-        type=argparse.FileType('w'),
-        help='Log file. Default: stderr.')
-    arguments.add_argument(
-        '-v', '--verbose', default=0, action='count',
-        help='Increase log level. May be used several times.')
-    arguments.add_argument(
-        '-q', '--quiet', default=0, action='count',
-        help='Decrease log level. May be used several times.')
-    return arguments.parse_args()
+    parser.set_defaults(func=_main)
 
 
-def main(args: argparse.Namespace, token: str):
+def _main(args: argparse.Namespace):
     """Download info for repos in input to CSV file.
 
     :param argparse.Namespace args:
         Command line arguments.
-    :param str token:
-        Token to use for authentication with Github.
     """
-    github = GradleFileSearcher(token=token)
+    __log__.debug('Reading from %s', args.repo_list.name)
+    github = GradleFileSearcher(token=os.getenv('GITHUB_AUTH_TOKEN'))
     csv_reader = csv.DictReader(args.repo_list)
     fieldnames = csv_reader.fieldnames + [
         'has_gradle_files', 'renamed_to', 'not_found']
@@ -198,10 +186,3 @@ def main(args: argparse.Namespace, token: str):
                         __log__.exception(error)
                         raise error
         csv_writer.writerow(row)
-
-
-if __name__ == '__main__':
-    ARGS = parse_cmdline_arguments()
-    log.configure_logger(__package__, ARGS.log, ARGS.verbose, ARGS.quiet)
-    TOKEN = os.getenv('GITHUB_AUTH_TOKEN')
-    main(ARGS, TOKEN)

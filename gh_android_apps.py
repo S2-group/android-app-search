@@ -16,6 +16,7 @@ from util import log
 
 
 SUB_COMMANDS = [
+    'get_gradle_files',
     'add_gradle_info',
     'clone',
     ]
