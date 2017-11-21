@@ -3,6 +3,9 @@
 Combine information from Github and Google Play to find open source Android
 apps. Commonly used meta data is parsed into a graph database.
 
+Reads environment variable GITHUB_AUTH_TOKEN to use for authentication with
+Github if available. Authenticated requests have higher rate limits.
+
 This script executes several of the interdependent steps as sub-commands. Use
 the --help option on a sub-command to learn more about it.
 """

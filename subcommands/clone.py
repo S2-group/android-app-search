@@ -5,9 +5,6 @@ the Github repository in the format <ownwer-login>/<repo-name>.
 
 Repositories can be filitered by a minimum number of commits requirement.
 
-Reads environment variable GITHUB_AUTH_TOKEN to use for authentication with
-Github if available. Authenticated requests have higher rate limits.
-
 Use -h or --help for more information.
 """
 import argparse
