@@ -29,12 +29,11 @@ NODE_GOOGLE_PLAY_CLI_BULK_BIN = '/usr/bin/gp-bulk-details'
 BULK_SIZE = 900
 DELAY = 12 # in seconds
 
-LOG_LEVEL = logging.DEBUG
-LOG_FORMAT = '%(asctime)s | [%(levelname)s] %(message)s'
 logger = logging.getLogger(__name__)
 
 
 T = TypeVar('T')
+
 
 def grouper(items: Iterable[T], n: int) -> Iterator[List[T]]:
     """Group items into n sized groups.
@@ -52,37 +51,18 @@ def grouper(items: Iterable[T], n: int) -> Iterator[List[T]]:
         yield group
 
 
-def parse_cmdline_arguments() -> argparse.Namespace:
-    """Define and parse commandline arguments."""
-    arguments = argparse.ArgumentParser(description=__doc__,
-            formatter_class=argparse.RawDescriptionHelpFormatter)
-    arguments.add_argument('--input', default=sys.stdin,
+def define_cmdline_arguments(parser: argparse.ArgumentParser):
+    """Define commandline arguments."""
+    parser.add_argument('--input', default=sys.stdin,
             type=argparse.FileType('r'),
             help='File to read package names from. Default: stdin.')
-    arguments.add_argument('--outdir', default='out/', type=str,
+    parser.add_argument('--outdir', default='out/', type=str,
             help='Out directory. Default: out/.')
-    arguments.add_argument('--log', default=sys.stderr,
-            type=argparse.FileType('w'),
-            help='Log file. Default: stderr.')
-    arguments.add_argument('--bulk_details-bin',
+    parser.add_argument('--bulk_details-bin',
             default=NODE_GOOGLE_PLAY_CLI_BULK_BIN, type=str,
             help='Path to node-google-play-cli bulk-details binary. '
             'Default: {}'.format(NODE_GOOGLE_PLAY_CLI_BULK_BIN))
-    return arguments.parse_args()
-
-
-def set_logging_handler(handler: logging.Handler):
-    """Use handler for logging in this module."""
-    logger.setLevel(handler.level)
-    logger.addHandler(handler)
-
-
-def configure_logger(stream: IO[str]):
-    """Create handler for logging to stream."""
-    handler = logging.StreamHandler(stream)
-    handler.setFormatter(logging.Formatter(LOG_FORMAT))
-    handler.setLevel(LOG_LEVEL)
-    set_logging_handler(handler)
+    parser.set_defaults(func=_main)
 
 
 def bulk_fetch_details(package_names: List[str]) -> Mapping[str, Any]:
@@ -132,8 +112,9 @@ def download_package_details(input_file: IO[str], out_dir: str):
         time.sleep(DELAY)
 
 
-if __name__ == '__main__':
-    args = parse_cmdline_arguments()
-    configure_logger(args.log)
+def _main(args: argparse.Namespace):
+    """Pass arguments to respective function."""
+    global NODE_GOOGLE_PLAY_CLI_BULK_BIN
     NODE_GOOGLE_PLAY_CLI_BULK_BIN = args.bulk_details_bin
+    logger.debug('Reading from %s', args.input.name)
     download_package_details(args.input, args.outdir)

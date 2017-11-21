@@ -18,6 +18,7 @@ from util import log
 
 SUB_COMMANDS = [
     'verify_play_link',
+    'get_play_data',
     'match_packages',
     'get_repo_data',
     'get_gradle_files',
