@@ -13,6 +13,7 @@ from util import log
 
 
 SUB_COMMANDS = [
+    'clone',
     ]
 
 

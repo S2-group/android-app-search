@@ -1,2 +1,3 @@
 github3.py==0.9.6
+GitPython==2.1.7
 requests==2.18.4
