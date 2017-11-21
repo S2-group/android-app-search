@@ -1,13 +1,14 @@
 """Download information about repositories from Github.
 
 Read CSV file as input and write information to output CSV file.
+
+Use -h or --help for more information.
 """
 import argparse
 import csv
 import logging
 import os
 import sys
-from util import log
 from util.github_repo import RepoVerifier
 
 
@@ -43,44 +44,30 @@ def download_repo_data(full_name: str, github: RepoVerifier) -> dict:
     return None
 
 
-def parse_cmdline_arguments() -> argparse.Namespace:
-    """Define and parse commandline arguments."""
-    arguments = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    arguments.add_argument(
+def define_cmdline_arguments(parser: argparse.ArgumentParser):
+    """Define commandline arguments."""
+    parser.add_argument(
         '-o', '--out', default=sys.stdout,
         type=argparse.FileType('w'),
         help='CSV file to write meta data to.')
-    arguments.add_argument(
+    parser.add_argument(
         '-p', '--package_list',
         default=sys.stdin,
         type=argparse.FileType('r'),
         help='''CSV file that matches package names to a repository.
             The file needs to contain a column for the package name and
             a second column with the repo name. Default: stdin.''')
-    arguments.add_argument(
-        '--log', default=sys.stderr,
-        type=argparse.FileType('w'),
-        help='Log file. Default: stderr.')
-    arguments.add_argument(
-        '-v', '--verbose', default=0, action='count',
-        help='Increase log level. May be used several times.')
-    arguments.add_argument(
-        '-q', '--quiet', default=0, action='count',
-        help='Decrease log level. May be used several times.')
-    return arguments.parse_args()
+    parser.set_defaults(func=_main)
 
 
-def main(args: argparse.Namespace, token: str):
+def _main(args: argparse.Namespace):
     """Download info for repos in input to CSV file.
 
     :param argparse.Namespace args:
         Command line arguments.
-    :param str token:
-        Token to use for authentication with Github.
     """
-    repo_verifier = RepoVerifier(token=token)
+    __log__.debug('Reading from %s', args.package_list.name)
+    repo_verifier = RepoVerifier(token=os.getenv('GITHUB_AUTH_TOKEN'))
     csv_reader = csv.reader(args.package_list)
     csv_writer = csv.DictWriter(args.out, CSV_COLUMNS)
     csv_writer.writeheader()
@@ -94,10 +81,3 @@ def main(args: argparse.Namespace, token: str):
         else:
             __log__.warning(
                 'Package %s does not contain a repo name.', row[0])
-
-
-if __name__ == '__main__':
-    ARGS = parse_cmdline_arguments()
-    log.configure_logger(__package__, ARGS.log, ARGS.verbose, ARGS.quiet)
-    TOKEN = os.getenv('GITHUB_AUTH_TOKEN')
-    main(ARGS, TOKEN)
